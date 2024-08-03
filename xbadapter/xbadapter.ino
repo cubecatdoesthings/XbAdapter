@@ -2,12 +2,14 @@
 #define clock_pin 12        // Clock line (GPIO 12)
 #define boot_button_pin 0   // Boot button (GPIO 0)
 
-const int led_cmd[10] = {0,0,1,0,0,0,0,1,0,0}; // LED Initialization
-const int boot_anim_cmd[10] = {0,0,1,0,0,0,0,1,0,1}; // Boot Animation
-const int sync_cmd[10] = {0,0,0,0,0,0,0,1,0,0}; // Sync
-const int turn_off_cmd[10] = {0,0,0,0,0,0,1,0,0,1}; // Turn Off Controllers
+// Commands
+const int led_cmd[10] = {0,0,1,0,0,0,0,1,0,0}; // LED Initialization Command (0x084)
+const int boot_anim_cmd[10] = {0,0,1,0,0,0,0,1,0,1}; // Boot Animation Command (0x089)
+const int sync_cmd[10] = {0,0,0,0,0,0,0,1,0,0}; // Sync Command (0x004)
+const int turn_off_cmd[10] = {0,0,0,0,0,0,1,0,0,1}; // Turn Off Controllers Command (0x009)
 
 bool button_pressed = false;  // Track if the button is pressed
+bool syncing = false;         // Track if the system is in the sync process
 unsigned long button_press_start = 0; // Timer for button press duration
 
 void sendData(const int command[]) {
@@ -28,8 +30,6 @@ void sendData(const int command[]) {
 }
 
 void setup() {
-  Serial.begin(115200);
-
   pinMode(data_pin, INPUT);
   pinMode(clock_pin, INPUT);
   pinMode(boot_button_pin, INPUT_PULLUP); // Configure boot button pin with internal pull-up resistor
@@ -50,21 +50,22 @@ void loop() {
       // Button was just pressed
       button_pressed = true;
       button_press_start = millis(); // Record the start time
-    } else if (millis() - button_press_start >= 1000) {
+    } else if (millis() - button_press_start >= 1000 && !syncing) {
       // Button has been held for at least 1 second
-      Serial.println("Boot button held for 1 second or more. Syncing...");
       sendData(sync_cmd);
-      delay(1000); // Wait for 1 second to avoid multiple sync commands
-      button_pressed = false; // Reset button state
+      syncing = true; // Mark as syncing
     }
   } else {
     // Button is not pressed
     if (button_pressed) {
       // Button was just released
+      if (millis() - button_press_start < 1000) {
+        sendData(turn_off_cmd);
+        delay(100); // Short delay
+        sendData(led_cmd); // Re-initialize LEDs after turning off controllers
+      }
       button_pressed = false; // Reset button state
-      Serial.println("Boot button pressed. Turning off controllers...");
-      sendData(turn_off_cmd);
-      delay(1000); // Wait for 1 second to avoid multiple turn-off commands
+      syncing = false; // Reset syncing state
     }
   }
 
